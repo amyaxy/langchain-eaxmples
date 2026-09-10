@@ -6,8 +6,10 @@ LangChain v1 案例：用 `create_agent` 构建 Agent，并演示**流式输出�
 
 | 路径 | 作用 |
 | --- | --- |
-| `src/HelloLangchainAgent.py` | **案例一（入门）**：带 `get_weather` 工具的最小 Agent，演示调用与流式输出 |
-| `src/RealWorldAgent.py` | **案例二（实战）**：抓取 URL 文档 + `InMemorySaver` 多轮记忆的文学数据助手 |
+| `src/HelloLangchainAgent.py` | **案例一 · 非流式**：带 `get_weather` 工具的最小 Agent（`invoke` 一次返回） |
+| `src/HelloLangchainAgent_stream.py` | **案例一 · 流式**：同上 Agent，`stream` 逐 token 打字机输出 |
+| `src/RealWorldAgent.py` | **案例二 · 非流式**：URL 抓取 + `InMemorySaver` 多轮记忆的文学数据助手（`invoke`） |
+| `src/RealWorldAgent_stream.py` | **案例二 · 流式**：同上 Agent，`stream` token 流 + 工具执行进度 |
 | `.env.example` | 环境变量参考模板（占位符，随项目提交） |
 | `.env` | 真实环境变量配置（含密钥，被 `.gitignore` 忽略，**不提交**；由 `.env.example` 复制生成） |
 | `main.py` | `uv init` 生成的默认入口（打印 Hello from langchain!），无实际用途 |
@@ -33,6 +35,10 @@ uv sync
 ### 2. 配置环境变量（推荐：.env 文件）
 
 两个案例统一从环境变量读取配置（`OPENAI_API_KEY` / `OPENAI_API_BASE` 缺失时启动即报错）。
+四个案例文件启动时都会通过 **`python-dotenv` 自动加载 `langchain/.env`**，因此：
+
+- 命令行直接 `uv run python src/xxx.py` 即可读到 `.env`，无需手动 export
+- IDEA 运行配置里设置的环境变量优先级更高（`load_dotenv` 默认不覆盖已存在的变量），两种方式不冲突
 
 **第一步：复制参考模板并填入真实值**
 
@@ -89,13 +95,16 @@ OPENAI_MODEL=deepseek-v4-flash
 > 也可以直接在运行配置的 **Environment variables** 一栏手填（多条用分号 `;` 分隔）：
 > `OPENAI_API_KEY=xxx;OPENAI_API_BASE=xxx;OPENAI_MODEL=deepseek-v4-flash`
 
-## 案例一：HelloLangchainAgent.py（入门）
+## 案例一：HelloLangchainAgent（入门）
 
-位置：`src/HelloLangchainAgent.py`
+带 `get_weather` 工具的最小 Agent。`src/` 下提供**两个版本**：
 
-创建一个带 `get_weather` 工具的最小 Agent，调用一次并输出结果。
+| 版本 | 文件 | 说明 |
+| --- | --- | --- |
+| 非流式 | `src/HelloLangchainAgent.py` | `agent.invoke(...)` 一次性返回最终结果 |
+| 流式 | `src/HelloLangchainAgent_stream.py` | `agent.stream(..., stream_mode="messages")` 逐 token 打字机打印 |
 
-### 普通调用（invoke）
+核心构建（两版本共用）：
 
 ```python
 from langchain.agents import create_agent
@@ -112,16 +121,16 @@ agent = create_agent(
     system_prompt="You are a helpful assistant",
     debug=True,
 )
-
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "What's the weather in San Francisco?"}]}
-)
-print(result["messages"][-1].content_blocks)
 ```
 
-### 流式输出（stream）
+运行：
 
-把 `invoke` 换成 `stream`，用 `stream_mode="messages"` 逐 token 打印（打字机效果）：
+```shell
+uv run python src/HelloLangchainAgent.py           # 非流式
+uv run python src/HelloLangchainAgent_stream.py    # 流式
+```
+
+流式核心（逐 token 打印，打字机效果）：
 
 ```python
 for chunk in agent.stream(
@@ -135,29 +144,28 @@ for chunk in agent.stream(
             print(token.text, end="", flush=True)
 ```
 
-## 案例二：RealWorldAgent.py（实战）
-
-位置：`src/RealWorldAgent.py`
+## 案例二：RealWorldAgent（实战）
 
 一个「文学数据助手」：通过 `fetch_text_from_url` 工具抓取 Project Gutenberg 上的
 《了不起的盖茨比》全文，回答「包含 Gatsby 的行数 / Daisy 首次出现的行号」等问题；
 用 `InMemorySaver` 作为 checkpointer，按 `thread_id` 保存多轮会话。
+`src/` 下提供**两个版本**：
 
-### 普通调用（invoke）
+| 版本 | 文件 | 说明 |
+| --- | --- | --- |
+| 非流式 | `src/RealWorldAgent.py` | `agent.invoke(...)` 一次性返回最终结果 |
+| 流式 | `src/RealWorldAgent_stream.py` | `agent.stream(..., stream_mode=["messages", "updates"])` token 流 + 工具执行进度 |
 
-```python
-# ...（agent 构建部分见源文件：init_chat_model + @tool + InMemorySaver）
+核心构建（两版本共用：`init_chat_model` + `@tool` + `InMemorySaver`，见源文件）。
 
-agent_result = agent.invoke(
-    {"messages": [{"role": "user", "content": content}]},
-    config={"configurable": {"thread_id": "great-gatsby-lc"}},
-)
-print(agent_result["messages"][-1].content_blocks)
+运行：
+
+```shell
+uv run python src/RealWorldAgent.py           # 非流式
+uv run python src/RealWorldAgent_stream.py    # 流式
 ```
 
-### 流式输出（stream）
-
-同时监听 token 流与 Agent 每步状态（工具调用、节点执行进度）：
+流式核心（同时监听 token 流与 Agent 每步状态）：
 
 ```python
 for chunk in agent.stream(
@@ -215,6 +223,7 @@ LangSmith 会把**所有环节**（LLM 调用、工具执行、Agent 步骤、to
 
 ```dotenv
 LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 LANGSMITH_API_KEY=your-langsmith-api-key
 LANGSMITH_PROJECT=langchain-examples   # 可选，按项目分组
 ```

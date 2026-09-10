@@ -101,9 +101,23 @@ Do your best on (1) and (2). If at any point you realize you cannot **verify** a
 your available tools and reasoning, do not fabricate numbers: use `null` for that field and spell out
 the limitation in `how_you_computed_counts`. If you encounter any errors please report what the error was and what the error message was."""
 
-agent_result = agent.invoke(
+# ===== 流式调用（stream）：逐 token 打印 + 显示工具/节点执行进度 =====
+# 对应非流式版本见 src/RealWorldAgent.py（agent.invoke）
+print("=== Agent 流式输出开始（messages + updates） ===")
+for chunk in agent.stream(
     {"messages": [{"role": "user", "content": content}]},
     config={"configurable": {"thread_id": "great-gatsby-lc"}},
-)
-
-print(agent_result["messages"][-1].content_blocks)
+    stream_mode=["messages", "updates"],
+    version="v2",
+):
+    if chunk["type"] == "messages":
+        token, metadata = chunk["data"]  # token 是 AIMessageChunk
+        if token.text:
+            print(token.text, end="", flush=True)
+    elif chunk["type"] == "updates":
+        # 打印每个 Agent 步骤完成后的节点状态（model 推理 / tools 工具执行）
+        for node, update in chunk["data"].items():
+            if node in ("model", "tools"):
+                msg = update["messages"][-1]
+                print(f"\n—— [{node}] 完成: {msg.__class__.__name__}", flush=True)
+print("\n=== Agent 流式输出结束 ===")

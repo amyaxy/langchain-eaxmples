@@ -23,7 +23,6 @@ if not api_key or not api_base:
 # 定义一个天气查询工具函数，智能体可以调用它来获取城市天气
 def get_weather(city: str) -> str:
     """Get weather for a given city."""
-    # 返回固定格式的天气信息（示例中始终返回晴天）
     return f"It's always sunny in {city}!"
 
 
@@ -35,10 +34,16 @@ agent = create_agent(
     debug=True,                        # 开启调试模式，会输出详细的执行日志
 )
 
-# 调用智能体，传入用户消息（询问旧金山的天气）
-result = agent.invoke(
-    {"messages": [{"role": "user", "content": "What's the weather in San Francisco?"}]}
-)
-
-# 打印智能体回复的最后一条消息的内容块（即最终生成的回答）
-print(result["messages"][-1].content_blocks)
+# ===== 流式调用（stream）：逐 token 打印，打字机效果 =====
+# 对应非流式版本见 src/HelloLangchainAgent.py（agent.invoke）
+print("=== Agent 流式输出开始 ===")
+for chunk in agent.stream(
+    {"messages": [{"role": "user", "content": "What's the weather in San Francisco?"}]},
+    stream_mode="messages",
+    version="v2",
+):
+    if chunk["type"] == "messages":
+        token, metadata = chunk["data"]  # token 是 AIMessageChunk
+        if token.text:
+            print(token.text, end="", flush=True)
+print("\n=== Agent 流式输出结束 ===")
